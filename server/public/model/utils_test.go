@@ -1379,3 +1379,181 @@ func TestStructFromJSONLimited(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
+
+func OriginParseHashtags(text string) (string, string) {
+	words := strings.Fields(text)
+
+	hashtagString := ""
+	plainString := ""
+	for _, word := range words {
+		// trim off surrounding punctuation
+		word = puncStart.ReplaceAllString(word, "")
+		word = puncEnd.ReplaceAllString(word, "")
+
+		// and remove extra pound #s
+		word = hashtagStart.ReplaceAllString(word, "#")
+
+		if validHashtag.MatchString(word) {
+			hashtagString += " " + word
+		} else {
+			plainString += " " + word
+		}
+	}
+
+	if len(hashtagString) > 1000 {
+		hashtagString = hashtagString[:999]
+		lastSpace := strings.LastIndex(hashtagString, " ")
+		if lastSpace > -1 {
+			hashtagString = hashtagString[:lastSpace]
+		} else {
+			hashtagString = ""
+		}
+	}
+
+	return strings.TrimSpace(hashtagString), strings.TrimSpace(plainString)
+}
+
+func OptimizedParseHashTags(text string) (string, string) {
+	words := strings.Fields(text)
+
+	// Use strings.Builder for better performance
+	var hashtagBuilder strings.Builder
+	var plainBuilder strings.Builder
+
+	for _, word := range words {
+		// trim off surrounding punctuation
+		word = puncStart.ReplaceAllString(word, "")
+		word = puncEnd.ReplaceAllString(word, "")
+
+		// and remove extra pound #s
+		word = hashtagStart.ReplaceAllString(word, "#")
+
+		if validHashtag.MatchString(word) {
+			hashtagBuilder.WriteString(" ")
+			hashtagBuilder.WriteString(word)
+		} else {
+			plainBuilder.WriteString(" ")
+			plainBuilder.WriteString(word)
+		}
+	}
+
+	// Get hashtag string for length limit processing
+	hashtagString := hashtagBuilder.String()
+
+	// Limit hashtag string length to 1000 chars
+	// If exceeded, trim to last space or empty
+	if len(hashtagString) > 1000 {
+		hashtagString = hashtagString[:999]
+		lastSpace := strings.LastIndex(hashtagString, " ")
+		if lastSpace > -1 {
+			hashtagString = hashtagString[:lastSpace]
+		} else {
+			hashtagString = ""
+		}
+	}
+
+	return strings.TrimSpace(hashtagString), strings.TrimSpace(plainBuilder.String())
+}
+
+// Test cases with different sizes and characteristics
+var benchmarkCases = []struct {
+	name string
+	text string
+}{
+	{
+		name: "Small_NoHashtags",
+		text: "Just a simple text without any hashtags",
+	},
+	{
+		name: "Small_WithHashtags",
+		text: "Post with #simple #hashtags here",
+	},
+	{
+		name: "Medium_MixedContent",
+		text: generateTestString(100, 0.3), // 30% hashtags
+	},
+	{
+		name: "Medium_PureText",
+		text: generateTestString(100, 0.0), // 0% hashtags
+	},
+	{
+		name: "Large_MixedContent",
+		text: generateTestString(1000, 0.3), // 30% hashtags
+	},
+	{
+		name: "Large_PureText",
+		text: generateTestString(1000, 0), // 0% hashtags
+	},
+	{
+		name: "VeryLarge_MixedContent",
+		text: generateTestString(5000, 0.3), // 30% hashtags
+	},
+	{
+		name: "VeryLarge_PureText",
+		text: generateTestString(5000, 0.0), // 0% hashtags
+	},
+}
+
+// Helper function to generate test strings with specified size and hashtag ratio
+func generateTestString(wordCount int, hashtagRatio float64) string {
+	var builder strings.Builder
+	hashtagWords := []string{"#golang", "#programming", "#testing", "#benchmark", "#performance"}
+	normalWords := []string{"the", "quick", "brown", "fox", "jumps", "over", "lazy", "dog"}
+
+	for i := 0; i < wordCount; i++ {
+		if float64(i)/float64(wordCount) < hashtagRatio {
+			// Add hashtag word
+			builder.WriteString(hashtagWords[i%len(hashtagWords)])
+		} else {
+			// Add normal word
+			builder.WriteString(normalWords[i%len(normalWords)])
+		}
+		builder.WriteString(" ")
+	}
+	return builder.String()
+}
+
+// Benchmark original implementation
+func BenchmarkOriginParseHashtags(b *testing.B) {
+	for _, bc := range benchmarkCases {
+		b.Run(bc.name, func(b *testing.B) {
+			b.ReportAllocs() // Report memory allocations
+			b.ResetTimer()   // Reset timer before the actual benchmark
+			for i := 0; i < b.N; i++ {
+				OriginParseHashtags(bc.text)
+			}
+		})
+	}
+}
+
+// Benchmark optimized implementation
+func BenchmarkOptimizedParseHashTags(b *testing.B) {
+	for _, bc := range benchmarkCases {
+		b.Run(bc.name, func(b *testing.B) {
+			b.ReportAllocs() // Report memory allocations
+			b.ResetTimer()   // Reset timer before the actual benchmark
+			for i := 0; i < b.N; i++ {
+				OptimizedParseHashTags(bc.text)
+			}
+		})
+	}
+}
+
+// Validate that both implementations produce the same results
+func TestImplementationsEquivalence(t *testing.T) {
+	for _, tc := range benchmarkCases {
+		t.Run(tc.name, func(t *testing.T) {
+			originalHashtags, originalPlain := OriginParseHashtags(tc.text)
+			optimizedHashtags, optimizedPlain := OptimizedParseHashTags(tc.text)
+
+			if originalHashtags != optimizedHashtags {
+				t.Errorf("Hashtags mismatch for %s:\nOriginal:  %s\nOptimized: %s",
+					tc.name, originalHashtags, optimizedHashtags)
+			}
+			if originalPlain != optimizedPlain {
+				t.Errorf("Plain text mismatch for %s:\nOriginal:  %s\nOptimized: %s",
+					tc.name, originalPlain, optimizedPlain)
+			}
+		})
+	}
+}
