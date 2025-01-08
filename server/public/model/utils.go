@@ -711,6 +711,10 @@ func ParseHashtags(text string) (string, string) {
 	var hashtagBuilder strings.Builder
 	var plainBuilder strings.Builder
 
+	estimatedCap := min(len(text)/2, 1000)
+	hashtagBuilder.Grow(estimatedCap)
+	plainBuilder.Grow(len(text) - estimatedCap)
+
 	for _, word := range words {
 		// trim off surrounding punctuation
 		word = puncStart.ReplaceAllString(word, "")
