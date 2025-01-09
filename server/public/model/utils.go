@@ -702,33 +702,38 @@ var (
 	puncStart    = regexp.MustCompile(`^[^\pL\d\s#]+`)
 	hashtagStart = regexp.MustCompile(`^#{2,}`)
 	puncEnd      = regexp.MustCompile(`[^\pL\d\s]+$`)
+	punc         = regexp.MustCompile(`(^[^\pL\d\s#]+)(?P<value>.*)([^\pL\d\s]+$)`)
 )
 
 func ParseHashtags(text string) (string, string) {
-	words := strings.Fields(text)
+	words := bytes.Fields([]byte(text))
+
+	estimatedCap := min(len(text)/2, 1000)
 
 	// Use strings.Builder for better performance
 	var hashtagBuilder strings.Builder
 	var plainBuilder strings.Builder
 
-	estimatedCap := min(len(text)/2, 1000)
 	hashtagBuilder.Grow(estimatedCap)
 	plainBuilder.Grow(len(text) - estimatedCap)
 
+	template := []byte("$value")
 	for _, word := range words {
+		wordTrimmed := []byte{}
 		// trim off surrounding punctuation
-		word = puncStart.ReplaceAllString(word, "")
-		word = puncEnd.ReplaceAllString(word, "")
+		for _, punctuationMatch := range punc.FindAllSubmatchIndex(word, -1) {
+			wordTrimmed = punc.Expand(wordTrimmed, template, word, punctuationMatch)
+		}
 
 		// and remove extra pound #s
-		word = hashtagStart.ReplaceAllString(word, "#")
+		word = hashtagStart.ReplaceAll(word, []byte("#"))
 
-		if validHashtag.MatchString(word) {
+		if validHashtag.Match(word) {
 			hashtagBuilder.WriteString(" ")
-			hashtagBuilder.WriteString(word)
+			hashtagBuilder.Write(word)
 		} else {
 			plainBuilder.WriteString(" ")
-			plainBuilder.WriteString(word)
+			plainBuilder.Write(word)
 		}
 	}
 

@@ -1455,6 +1455,56 @@ func OptimizedParseHashTags(text string) (string, string) {
 	return strings.TrimSpace(hashtagString), strings.TrimSpace(plainBuilder.String())
 }
 
+func OptimizedWithGrowParseHashTags(text string) (string, string) {
+	words := bytes.Fields([]byte(text))
+
+	estimatedCap := min(len(text)/2, 1000)
+
+	// Use strings.Builder for better performance
+	var hashtagBuilder strings.Builder
+	var plainBuilder strings.Builder
+
+	hashtagBuilder.Grow(estimatedCap)
+	plainBuilder.Grow(len(text) - estimatedCap)
+
+	template := []byte("$value")
+	for _, word := range words {
+		wordTrimmed := []byte{}
+		// trim off surrounding punctuation
+		for _, punctuationMatch := range punc.FindAllSubmatchIndex(word, -1) {
+			wordTrimmed = punc.Expand(wordTrimmed, template, word, punctuationMatch)
+		}
+
+		// and remove extra pound #s
+		word = hashtagStart.ReplaceAll(word, []byte("#"))
+
+		if validHashtag.Match(word) {
+			hashtagBuilder.WriteString(" ")
+			hashtagBuilder.Write(word)
+		} else {
+			plainBuilder.WriteString(" ")
+			plainBuilder.Write(word)
+		}
+	}
+
+	// Get hashtag string for length limit processing
+	hashtagString := hashtagBuilder.String()
+
+	// Limit hashtag string length to 1000 chars
+	// If exceeded, trim to last space or empty
+	if len(hashtagString) > 1000 {
+		hashtagString = hashtagString[:999]
+		lastSpace := strings.LastIndex(hashtagString, " ")
+		if lastSpace > -1 {
+			hashtagString = hashtagString[:lastSpace]
+		} else {
+			hashtagString = ""
+		}
+	}
+
+	return strings.TrimSpace(hashtagString), strings.TrimSpace(plainBuilder.String())
+}
+
 // Test cases with different sizes and characteristics
 var benchmarkCases = []struct {
 	name string
